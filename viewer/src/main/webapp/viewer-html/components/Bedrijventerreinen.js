@@ -22,6 +22,7 @@ var BEDRIJVENTERREINEN_DUMMY_DATA = [ { "gemeente": "HARDENBERG", "bedrijventerr
 Ext.define ("viewer.components.Bedrijventerreinen", {
     extend: "viewer.components.Component",
     bedrijventerrein: null,
+    stores: {},
     config:{
         title: null,
         titlebarIcon: null,
@@ -37,6 +38,7 @@ Ext.define ("viewer.components.Bedrijventerreinen", {
         if(!Ext.isDefined(conf.showLabels)) conf.showLabels = true; 
         this.initConfig(conf);
 		viewer.components.Bedrijventerreinen.superclass.constructor.call(this, this.config);
+		this.createStores();
 		this.loadWindow();
         return this;
     },
@@ -56,59 +58,210 @@ Ext.define ("viewer.components.Bedrijventerreinen", {
     },
     updateSelection: function(bedrijventerrein) {
         this.bedrijventerrein = bedrijventerrein;
+        // @TODO: inefficient to remove all forms and add again, better to actually change the values in the form
         this.form.removeAll();
         this.form.add([
             this.createAlgemeenForm(),
             this.createBereikbaarheidForm(),
             this.createOppervlakteForm()
         ]);
+        this.form.setActiveTab(0);
     },
     createForm: function() {
         this.form = Ext.create('Ext.tab.Panel', {
             flex: 1,
+            plain: true,
             items: [
                 this.createAlgemeenForm(),
                 this.createBereikbaarheidForm(),
                 this.createOppervlakteForm()
-            ]
+            ],
+            defaults: {
+                scrollable: true,
+                padding: 10
+            },
+            bbar: [
+                { xtype: 'button', text: 'Opslaan & Volgende', itemId: 'next-button', scope: this, handler: function() { this.saveAndNext(); } },
+                { xtype: 'button', text: 'Annuleren' },
+                '-',
+                { xtype: 'button', text: 'Help' }
+            ],
+            listeners: {
+                scope: this,
+                tabchange: this.updateSaveButtonLabel
+            }
         });
         return this.form;
     },
+    getActiveTabIndex: function() {
+        this.form.getActiveTab();
+    },
+    saveAndNext: function() {
+        this.save();
+        var current = this.form.getActiveTab();
+        var next = current.nextSibling();
+        if (next === null) {
+            return;
+        }
+        this.form.setActiveTab(next);
+        this.updateSaveButtonLabel();
+    },
+    updateSaveButtonLabel: function() {
+        var current = this.form.getActiveTab();
+        var nextButton = this.getContentContainer().query('#next-button')[0];
+        if (current.nextSibling() === null) {
+            nextButton.setText('Opslaan');
+        } else {
+            nextButton.setText('Opslaan & Volgende');
+        }
+    },
+    save: function() {
+        // @TODO: implement save
+    },
     createAlgemeenForm: function() {
-        return Ext.create('Ext.form.Panel', {
+        this.algemeenForm = Ext.create('Ext.form.Panel', {
             title: 'Algemeen en financieel',
             itemId: 'tab-algemeen',
+            defaultType: 'textfield',
+            layout: {
+                type: 'vbox',
+                align: 'stretch'
+            },
+            defaults: {
+                labelAlign: 'left',
+                labelWidth: 175,
+                maxWidth: 500
+            },
             items: [
-                this.createText("Kernnaam", this.bedrijventerrein ? this.bedrijventerrein.gemeente : ""),
-                this.createCombo("Planfase", "Vastgesteld", [ "Vastgesteld" ]),
-                this.createCombo("Terreinbeheerder", "Almelo", [ "Almelo" ])
+                { fieldLabel: "Kernnaam", name: 'kernnaam', value: this.bedrijventerrein ? this.bedrijventerrein.gemeente : "" },
+                { xtype: 'combobox', name: 'planfase', fieldLabel: "Planfase", value: "Vastgesteld", store: this.stores.planfase },
+                { xtype: 'combobox', name: 'terreinbeheerder', fieldLabel: "Terreinbeheerder", value: this.bedrijventerrein ? this.bedrijventerrein.gemeente : "",
+                    store: this.stores.terreinbeheerder, displayField: 'gemeente', valueField: 'gemeente' },
+                this.createColumnForm(
+                    { xtype: 'combobox', name: 'werklocatietype', fieldLabel: "Werklocatietype", value: this.bedrijventerrein ? this.bedrijventerrein.gemeente : "",
+                        store: this.stores.werklocatietype, displayField: 'gemeente', valueField: 'gemeente' },
+                    { xtype: 'combobox', name: 'park_management', fieldLabel: "Park management", value: "Ja", store: this.stores.parkmanagement, grow: true }
+                ),
+                this.createColumnForm(
+                    { xtype: 'combobox', name: 'milieuzonering', fieldLabel: "Milieuzonering", value: "Ja", store: this.stores.milieuzonering, grow: true },
+                    { xtype: 'combobox', name: 'maximale_milieucategorie', fieldLabel: "Maximale milieucategorie", value: "Zeer licht", store: this.stores.maximale_milieucategorie, grow: true }
+                ),
+                this.createColumnForm(
+                    { xtype: 'textfield', name: 'startjaar_uitgifte', fieldLabel: "Startjaar uitgifte", value: "" },
+                    { xtype: 'textfield', name: 'beoogd_jaar_uitgifte', fieldLabel: "Beoogd jaar niet terstond uitgeefbaar", value: "" }
+                ),
+                {
+                    xtype: 'gridpanel',
+                    header: false,
+                    store: this.stores.prijzen,
+                    plugins: {
+                        ptype: 'cellediting',
+                        clicksToEdit: 1
+                    },
+                    selModel: 'cellmodel',
+                    columns: [
+                        { header: 'Prijzen in euro\'s', dataIndex: 'label', flex: 1 },
+                        { header: 'Min', dataIndex: 'min', editor: 'textfield', flex: .5, align: 'end' },
+                        { header: 'Max', dataIndex: 'max', editor: 'textfield', flex: .5, align: 'end' }
+                    ],
+                    margin: '0 0 10 0'
+                },
+                {
+                    xtype: 'gridpanel',
+                    header: false,
+                    store: this.stores.mutaties,
+                    columns: [
+                        { header: '', dataIndex: 'label', flex: 1 },
+                        { header: 'Datum', dataIndex: 'datum', flex: 1 },
+                        { header: 'Door', dataIndex: 'bewerker', flex: 1 }
+                    ]
+                },
+                { xtype: 'textarea', name: 'opmerkingen', value: '', grow: true, growMax: 300, growMin: 100, fieldLabel: 'Opmerkingen', labelAlign: 'top' }
             ]
-        })
+        });
+        return this.algemeenForm;
     },
     createBereikbaarheidForm: function() {
-        return {
+        this.bereikbaarheidForm = Ext.create('Ext.form.Panel', {
             title: 'Bereikbaarheid en herstructurering',
-            html: 'Bereikbaarheid en herstructurering'
-        };
+            itemId: 'tab-bereikbaarheid',
+            defaultType: 'textfield',
+            layout: {
+                type: 'vbox',
+                align: 'stretch'
+            },
+            defaults: {
+                labelAlign: 'left',
+                labelWidth: 175,
+                maxWidth: 500
+            },
+            items: [
+                { xtype: 'combobox', name: 'ontsluiting_spoor', fieldLabel: 'Ontsluiting spoor', store: this.stores.ontsluiting_spoor },
+                { xtype: 'combobox', name: 'ontsluiting_water', fieldLabel: 'Ontsluiting water', store: this.stores.ontsluiting_water },
+                { xtype: 'combobox', name: 'externe_bereikbaarheid', fieldLabel: 'Externe bereikbaarheid', store: this.stores.externe_bereikbaarheid },
+                { xtype: 'combobox', name: 'parkeergelegenheid', fieldLabel: 'Parkeergelegenheid', store: this.stores.parkeergelegenheid },
+                { xtype: 'combobox', name: 'verouderd', fieldLabel: 'Verouderd', store: this.stores.verouderd, grow: true },
+                { xtype: 'combobox', name: 'hoofdoorzaak_veroudering', fieldLabel: 'Hoofdoorzaak veroudering', store: this.stores.hoofdoorzaak_veroudering },
+                { fieldLabel: 'Bruto ha verouderd', value: '', maxWidth: 275 },
+                { xtype: 'combobox', name: 'herstructereringsplan', fieldLabel: 'Herstructereringsplan', store: this.stores.herstructereringsplan },
+                { xtype: 'combobox', name: 'herstructereringsfase', fieldLabel: 'Herstructereringsfase', store: this.stores.herstructereringsfase },
+                { fieldLabel: 'Facelift (ha)', value: '', maxWidth: 275 },
+                { fieldLabel: 'Revitalisatie (ha)', value: '', maxWidth: 275 },
+                { fieldLabel: 'Zware revitalisatie (ha)', value: '', maxWidth: 275 },
+                { fieldLabel: 'Herprofilering (ha)', value: '', maxWidth: 275 },
+                { fieldLabel: 'Transformatie (ha)', value: '', maxWidth: 275 },
+            ]
+        });
+        return this.bereikbaarheidForm;
     },
     createOppervlakteForm: function() {
-        return {
+        this.bereikbaarheidForm = Ext.create('Ext.form.Panel', {
             title: 'Oppervlakte',
-            html: 'Oppervlakte'
-        };
+            itemId: 'tab-oppervlakte',
+            defaultType: 'textfield',
+            layout: {
+                type: 'vbox',
+                align: 'stretch'
+            },
+            defaults: {
+                labelAlign: 'left',
+                labelWidth: 175,
+                maxWidth: 500
+            },
+            items: [
+                { fieldLabel: 'Vol', value: 'Nee', disabled: true },
+                {
+                    xtype: 'gridpanel',
+                    header: false,
+                    store: this.stores.oppervlak,
+                    plugins: {
+                        ptype: 'cellediting',
+                        clicksToEdit: 1
+                    },
+                    selModel: 'cellmodel',
+                    columns: [
+                        { header: '', dataIndex: 'label', flex: 1 },
+                        { header: 'Oppervlak', dataIndex: 'oppervlak', editor: 'textfield', flex: 1, align: 'end' },
+                    ],
+                    margin: '0 0 10 0'
+                },
+                {
+                    xtype: 'gridpanel',
+                    header: false,
+                    store: this.stores.uitgeefbaar,
+                    columns: [
+                        { header: '', dataIndex: 'label', flex: 1 },
+                        { header: 'Gemeente', dataIndex: 'gemeente', flex: .5, align: 'end' },
+                        { header: 'Particulier', dataIndex: 'particulier', flex: .5, align: 'end' }
+                    ],
+                    margin: '0 0 10 0'
+                },
+                { xtype: 'container', html: '(Alle oppervlaktes in ha en afgeleid uit MOB)' }
+            ]
+        });
+        return this.bereikbaarheidForm;
     },
     createFilterContainer: function() {
-        var gemeentes = {};
-        for(var i = 0; i < BEDRIJVENTERREINEN_DUMMY_DATA.length; i++) if (!gemeentes.hasOwnProperty(BEDRIJVENTERREINEN_DUMMY_DATA[i].gemeente)) gemeentes[BEDRIJVENTERREINEN_DUMMY_DATA[i].gemeente] = true;
-        var gemeenteStore = Ext.create('Ext.data.Store', {
-            data: Ext.Array.map(Object.keys(gemeentes).sort(), function(gemeente) { return { gemeente: gemeente }; }),
-            queryMode: 'local'
-        });
-        var bedrijventerreinenStore = Ext.create('Ext.data.Store', {
-            data: BEDRIJVENTERREINEN_DUMMY_DATA,
-            queryMode: 'local',
-            fields: [ 'gemeente', 'bedrijventerrein' ]
-        });
         var container = Ext.create('Ext.container.Container', {
             width: '20%',
             minWidth: 200,
@@ -122,13 +275,14 @@ Ext.define ("viewer.components.Bedrijventerreinen", {
                     xtype: 'combobox',
                     labelAlign: 'top',
                     fieldLabel: 'Gemeente',
-                    store: gemeenteStore,
+                    store: this.stores.gemeentes,
                     displayField: 'gemeente',
                     valueField: 'gemeente',
                     listeners: {
+                        scope: this,
                         change: function(combo, value) {
-                            bedrijventerreinenStore.clearFilter();
-                            bedrijventerreinenStore.filter('gemeente', value);
+                            this.stores.bedrijventerreinen.clearFilter();
+                            this.stores.bedrijventerreinen.filter('gemeente', value);
                         }
                     }
                 },
@@ -141,11 +295,12 @@ Ext.define ("viewer.components.Bedrijventerreinen", {
                 {
                     xtype: 'gridpanel',
                     flex: 1,
-                    store: bedrijventerreinenStore,
+                    store: this.stores.bedrijventerreinen,
                     columns: [
                         { text: 'Bedrijventerrein', dataIndex: 'bedrijventerrein', flex: 1 }
                     ],
                     header: false,
+                    hideHeaders: true,
                     listeners: {
                         scope: this,
                         select: function(grid, record) {
@@ -157,20 +312,96 @@ Ext.define ("viewer.components.Bedrijventerreinen", {
         });
         return container;
     },
-    createText: function(label, value, opts) {
-        return Ext.Object.merge({}, {
-            xtype: 'textfield',
-            fieldLabel: label,
-            value: value
-        }, opts);
+    createColumnForm: function() {
+        var items = Array.prototype.slice.call(arguments);
+        var itemsConf = Ext.Array.map(items, function(item, idx) {
+            var conf = { xtype: 'fieldcontainer', flex: 1, defaults: { labelAlign: 'top' }, layout: { type: 'hbox', pack: 'start' }, items: [ item ], padding: '0 10 0 0' };
+            if (idx === 1 && items.length === 2) {
+                // For two-col forms align the last item to the right
+                return Ext.Object.merge({}, conf, { layout: { pack: 'end' }, padding: '0 0 0 10' });
+            }
+            return conf;
+        });
+        var cols = {
+            xtype: 'fieldcontainer',
+            layout: {
+                type: 'hbox',
+                align: 'stretch'
+            },
+            width: null,
+            items: itemsConf
+        };
+        return cols;
     },
-    createCombo: function(label, value, store, opts) {
-        return Ext.Object.merge({}, {
-            xtype: 'combobox',
-            fieldLabel: label,
-            value: value,
-            store: store
-        }, opts);
+    createLabel: function(str) {
+        return { xtype: 'container', html: str };
+    },
+    createStores: function() {
+        var gemeentes = {};
+        for(var i = 0; i < BEDRIJVENTERREINEN_DUMMY_DATA.length; i++) if (!gemeentes.hasOwnProperty(BEDRIJVENTERREINEN_DUMMY_DATA[i].gemeente)) gemeentes[BEDRIJVENTERREINEN_DUMMY_DATA[i].gemeente] = true;
+        var gemeenteStore = Ext.create('Ext.data.Store', {
+            data: Ext.Array.map(Object.keys(gemeentes).sort(), function(gemeente) { return { gemeente: gemeente }; }),
+            queryMode: 'local'
+        });
+        var bedrijventerreinenStore = Ext.create('Ext.data.Store', {
+            data: BEDRIJVENTERREINEN_DUMMY_DATA,
+            queryMode: 'local',
+            fields: [ 'gemeente', 'bedrijventerrein' ]
+        });
+        var prijzenStore = Ext.create('Ext.data.Store', {
+            fields: [ 'label', 'min', 'max' ],
+            data: [
+                { label: 'Verkoopprijs', min: '100', max: '130' },
+                { label: 'Erfpachtprijs', min: '100', max: '130' },
+            ]
+        });
+        var mutationStore = Ext.create('Ext.data.Store', {
+            fields: [ 'label', 'datum', 'bewerker' ],
+            data: [
+                { label: 'Gemeente', datum: '2-3-2019', bewerker: 'PJansen' },
+                { label: 'Provincie', datum: '2-3-2019', bewerker: 'DvanderVeen' },
+            ]
+        });
+        var oppervlakStore = Ext.create('Ext.data.Store', {
+            fields: [ 'label', 'oppervlak', 'editable' ],
+            data: [
+                { label: 'Bruto', oppervlak: 152.5700 },
+                { label: 'Netto', oppervlak: 116.0500 },
+                { label: 'Uitgegeven', oppervlak: 111.4300 },
+                { label: 'Uitgifte huidig jaar', oppervlak: 111.4300 },
+                { label: 'Terugkoop', oppervlak: 0, editable: true },
+            ]
+        });
+        var uitgeefbaarStore = Ext.create('Ext.data.Store', {
+            fields: [ 'label', 'gemeente', 'particulier' ],
+            data: [
+                { label: 'Terstond uitgeefbaar', gemeente: 2.0100, particulier: 2.0100 },
+                { label: 'Niet terstond uitgeefbaar', gemeente: 0, particulier: 0 },
+                { label: 'Grootsts uitgeefbaar deel', gemeente: 1.550, particulier: 0 }
+            ]
+        });
+        this.stores = {
+            gemeentes: gemeenteStore,
+            bedrijventerreinen: bedrijventerreinenStore,
+            planfase: ["Vastgesteld"],
+            terreinbeheerder:  gemeenteStore,
+            werklocatietype: gemeenteStore,
+            parkmanagement: ["Ja", "Nee"],
+            milieuzonering: ["Ja", "Nee"],
+            maximale_milieucategorie: ["Zeer licht", "Licht", "Gemiddeld", "Zwaar", "Zeer zwaar"],
+            prijzen: prijzenStore,
+            mutaties: mutationStore,
+            ontsluiting_spoor: [],
+            ontsluiting_water: [],
+            externe_bereikbaarheid: [],
+            parkeergelegenheid: [],
+            verouderd: ["Ja", "Nee"],
+            hoofdoorzaak_veroudering: [],
+            herstructereringsplan: [],
+            herstructereringsfase: [],
+            oppervlak: oppervlakStore,
+            uitgeefbaar: uitgeefbaarStore
+        };
     },
     getExtComponents: function() {
         return [ this.container.getId() ];
