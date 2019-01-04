@@ -1,3 +1,5 @@
+/* global Ext */
+
 /**
  * Copyright (C) 2012-2013 B3Partners B.V.
  *
@@ -133,7 +135,7 @@ Ext.define("viewer.components.Component",{
             buttonCls = '',
             buttonWidth = me.defaultButtonWidth,
             baseClass = this.getBaseClass(),
-            showLabel = false
+            showLabel = false,
             buttonHtml = "";
 
         if(!me.config.isPopup) return;

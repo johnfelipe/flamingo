@@ -33,7 +33,7 @@ Ext.define("viewer.components.CustomConfiguration", {
                 minWidth: 450,
                 minHeight: 250
             }
-        }
+        };
     }
 });
 
